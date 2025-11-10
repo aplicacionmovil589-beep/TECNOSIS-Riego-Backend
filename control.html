@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Control de Válvula TECNOSIS</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+        .container { max-width: 400px; margin: 0 auto; padding: 20px; border: 1px solid #ccc; border-radius: 8px; }
+        .input-group { margin-bottom: 20px; }
+        input { padding: 8px; width: 80px; text-align: center; }
+        button { padding: 10px 20px; margin: 10px; font-size: 18px; cursor: pointer; border: none; border-radius: 5px; color: white; }
+        #openBtn { background-color: #4CAF50; } /* Verde */
+        #closeBtn { background-color: #f44336; } /* Rojo */
+        #status { margin-top: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>💧 Control de Válvula Inteligente</h2>
+        
+        <div class="input-group">
+            <label for="duration">Duración del Riego (minutos):</label>
+            <input type="number" id="duration" value="5" min="1" max="180">
+        </div>
+
+        <button id="openBtn" onclick="controlValvulaOpen()">ABRIR VÁLVULA (Programado)</button>
+        
+        <button id="closeBtn" onclick="controlValvula('close')">CERRAR VÁLVULA (Manual)</button>
+        
+        <p id="status">Esperando comando...</p>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api/control/valvula';
+
+        // Función para el botón ABRIR (lee la duración)
+        function controlValvulaOpen() {
+            const durationInput = document.getElementById('duration');
+            const durationMinutes = parseInt(durationInput.value);
+
+            if (durationMinutes <= 0 || isNaN(durationMinutes)) {
+                alert("Por favor, ingresa una duración válida (en minutos).");
+                return;
+            }
+            // Llama a la función POST con la duración
+            controlValvula('open', durationMinutes);
+        }
+
+        async function controlValvula(action, durationMinutes = 0) {
+            const statusElement = document.getElementById('status');
+            
+            let message = `Enviando comando: ${action.toUpperCase()}`;
+            if (action === 'open' && durationMinutes > 0) {
+                message += ` por ${durationMinutes} minutos...`;
+            } else {
+                message += '...';
+            }
+            statusElement.textContent = message;
+
+            try {
+                const bodyData = { 
+                    action: action, 
+                    durationMinutes: durationMinutes // Enviamos la duración al backend
+                };
+
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(bodyData)
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.status === 'success') {
+                    if (action === 'open' && durationMinutes > 0) {
+                        statusElement.textContent = `✅ Válvula ABIERTA OK. Se cerrará automáticamente en ${durationMinutes} minutos.`;
+                        statusElement.style.color = '#4CAF50';
+                    } else {
+                        statusElement.textContent = `✅ Válvula ${action.toUpperCase()} OK.`;
+                        statusElement.style.color = action === 'open' ? '#4CAF50' : '#f44336';
+                    }
+                } else {
+                    statusElement.textContent = `❌ ERROR: ${data.message || 'Fallo desconocido.'}`;
+                    statusElement.style.color = '#f44336';
+                }
+
+            } catch (error) {
+                statusElement.textContent = `❌ ERROR DE RED: No se pudo conectar con el servidor local.`;
+                statusElement.style.color = 'red';
+                console.error('Error en la conexión con el backend:', error);
+            }
+        }
+    </script>
+</body>
+</html>
