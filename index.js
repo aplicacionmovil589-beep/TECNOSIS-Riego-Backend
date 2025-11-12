@@ -9,7 +9,7 @@ const path = require('path');
 
 const app = express();
 app.use(bodyParser.json());
-app.use(cors()); // Habilitar CORS para desarrollo local
+app.use(cors()); // Habilitar CORS para comunicación entre frontend/backend
 
 // 2. Definir variables de Entorno
 const ACCESS_ID = process.env.TUYA_ACCESS_ID ? process.env.TUYA_ACCESS_ID.trim() : null;
@@ -18,11 +18,18 @@ const DEVICE_ID_VALVE = process.env.TUYA_DEVICE_ID_VALVE;
 const PORT = 3000;
 const BASE_URL = process.env.TUYA_ENDPOINT; 
 
-// ******* VARIABLES GLOBALES PARA RIEGO AUTOMÁTICO Y PROGRAMACIÓN *******
+// ----------------------------------------------------
+// VARIABLES GLOBALES PARA RIEGO AUTOMÁTICO Y SEGURIDAD
+// ----------------------------------------------------
 let lastKnownHumidity = 0;
-const HUMIDITY_THRESHOLD = 45; // Umbral de humedad para iniciar riego (ej: 45%)
-const HUMIDITY_MARGIN = 5; // Margen de histéresis para el cierre (ej: 50% = 45% + 5)
-let autoCloseTimer = null; // Variable para almacenar el temporizador de cierre programado
+const HUMIDITY_THRESHOLD = 45; 
+const HUMIDITY_MARGIN = 5; 
+let autoCloseTimer = null; 
+
+// VARIABLES DE SEGURIDAD ESTÁTICAS (Para el Login)
+const STATIC_USERNAME = 'admin';
+const STATIC_PASSWORD = '123'; // ¡Cambia esta contraseña para el uso real!
+const SESSION_TOKEN_SECRET = 'TU_SECRETO_SEGURO_AQUI_2025'; // Usado para firmar el token
 
 // ******* VERIFICACIÓN CRÍTICA *******
 if (!ACCESS_ID || !SECRET_KEY || !BASE_URL) {
@@ -31,7 +38,7 @@ if (!ACCESS_ID || !SECRET_KEY || !BASE_URL) {
 }
 
 // ----------------------------------------------------
-// 3. FUNCIÓN PARA OBTENER EL TOKEN DE ACCESO (Grant Token)
+// 3. FUNCIÓN PARA OBTENER EL TOKEN DE ACCESO (Tuya Grant Token)
 // ----------------------------------------------------
 async function getAccessToken() {
     const t = Date.now().toString(); 
@@ -40,11 +47,9 @@ async function getAccessToken() {
     const query = '?grant_type=1';
     const bodyHash = crypto.createHash('sha256').update('', 'utf8').digest('hex');
 
-    // Construcción de stringToSign (firma para token)
     const stringToSign = [ method, bodyHash, '', path + query ].join('\n');
     const str = ACCESS_ID + t + stringToSign; 
 
-    // Generar la firma HMAC-SHA256
     const sign = crypto
         .createHmac("sha256", Buffer.from(SECRET_KEY, 'utf8'))
         .update(str, "utf8")
@@ -61,11 +66,10 @@ async function getAccessToken() {
         if (response.data && response.data.success) {
             return response.data.result.access_token;
         } else {
-            console.error("❌ ERROR DE AUTENTICACIÓN:", response.data);
+            console.error("❌ ERROR DE AUTENTICACIÓN TUYA:", response.data);
             return null;
         }
     } catch (error) {
-        // console.error("❌ ERROR DE RED/CONEXIÓN:", error.message);
         return null;
     }
 }
@@ -77,7 +81,6 @@ function signRequest(method, path, query, body, accessToken, t) {
     const bodyString = body ? JSON.stringify(body) : '';
     const bodyHash = crypto.createHash('sha256').update(bodyString, 'utf8').digest('hex');
     
-    // Fórmula de Negocio con Access Token
     const stringToSign = [ method, bodyHash, '', path + query ].join('\n');
     const str = ACCESS_ID + (accessToken || '') + t + stringToSign; 
 
@@ -115,7 +118,6 @@ async function getValveStatus() {
         
         if (response.data && response.data.success) {
             const statusList = response.data.result.status;
-            // 'switch_1' es el código del data point (DP) que controla ON/OFF
             const valveStatus = statusList.find(s => s.code === 'switch_1');
             return valveStatus ? valveStatus.value : false; 
         }
@@ -141,7 +143,6 @@ async function controlValvula(isOpen, accessToken) {
     const path = `/v1.0/devices/${DEVICE_ID_VALVE}/commands`;
     const t = Date.now().toString();
 
-    // Generar la firma para la solicitud POST
     const headers = signRequest(method, path, '', commands, accessToken, t);
 
     try {
@@ -175,20 +176,18 @@ async function scheduleAutoClose(durationMinutes) {
     
     console.log(`[PROGRAMACIÓN] Válvula ABIERTA. Se programará el CIERRE en ${durationMinutes} minutos.`);
 
-    // 2. Iniciar el nuevo temporizador
     autoCloseTimer = setTimeout(async () => {
         console.log(`[PROGRAMACIÓN] ¡Tiempo agotado (${durationMinutes} minutos)! Intentando CIERRE automático.`);
         
-        // 🚨 MODIFICACIÓN CRÍTICA: OBTENER EL TOKEN DENTRO DEL CALLBACK
         const accessToken = await getAccessToken(); 
         
         if (accessToken) {
-            await controlValvula(false, accessToken); // <-- CERRAR la válvula
+            await controlValvula(false, accessToken); 
         } else {
             console.error('[PROGRAMACIÓN] CIERRE FALLIDO: No se pudo obtener un Access Token válido.');
         }
 
-        autoCloseTimer = null; // Limpiar el temporizador después de la ejecución
+        autoCloseTimer = null; 
     }, durationMilliseconds);
 }
 
@@ -205,7 +204,6 @@ async function checkAutoIrrigation() {
             console.log(`[AUTOMÁTICO] Humedad (${lastKnownHumidity}%) < Umbral (${HUMIDITY_THRESHOLD}%). Iniciando riego.`);
             const accessToken = await getAccessToken();
             await controlValvula(true, accessToken); 
-            // Opcional: Programar cierre automático por seguridad si el riego dura mucho
         } 
     } else if (lastKnownHumidity > HUMIDITY_THRESHOLD + HUMIDITY_MARGIN) { 
         // Tierra húmeda: Detener riego si la válvula está abierta
@@ -214,7 +212,6 @@ async function checkAutoIrrigation() {
             const accessToken = await getAccessToken();
             await controlValvula(false, accessToken); 
             
-            // Cancelar cualquier temporizador manual activo si el riego es detenido por humedad
             if (autoCloseTimer) {
                 clearTimeout(autoCloseTimer);
                 autoCloseTimer = null;
@@ -224,9 +221,8 @@ async function checkAutoIrrigation() {
     }
 }
 
-
 // ----------------------------------------------------
-// 9. ENDPOINT PARA RECIBIR DATOS DEL SENSOR (Microcontrolador)
+// 9. ENDPOINT PARA RECIBIR DATOS DEL SENSOR (Automatización)
 // ----------------------------------------------------
 app.post('/api/data/sensor', (req, res) => {
     const { humidity } = req.body; 
@@ -238,7 +234,6 @@ app.post('/api/data/sensor', (req, res) => {
     lastKnownHumidity = humidity;
     console.log(`[SENSOR] Nueva lectura de humedad recibida: ${lastKnownHumidity}%`);
     
-    // Disparar la lógica de riego automático inmediatamente después de la lectura
     checkAutoIrrigation(); 
 
     res.status(200).send({ status: 'success', message: 'Dato recibido.' });
@@ -246,11 +241,42 @@ app.post('/api/data/sensor', (req, res) => {
 
 
 // ----------------------------------------------------
-// 10. ENDPOINT REST para la app móvil (Control Manual y Programado)
+// 10. ENDPOINT DE AUTENTICACIÓN (LOGIN)
 // ----------------------------------------------------
-app.post('/api/control/valvula', async (req, res) => {
+app.post('/api/auth/login', (req, res) => {
+    const { username, password } = req.body;
+
+    if (username === STATIC_USERNAME && password === STATIC_PASSWORD) {
+        // Generar un token simple 
+        const token = crypto.createHash('sha256').update(STATIC_USERNAME + SESSION_TOKEN_SECRET + Date.now()).digest('hex');
+        
+        console.log(`✅ USUARIO AUTENTICADO: ${username}. Token generado.`);
+        return res.status(200).send({ status: 'success', message: 'Login exitoso.', token: token });
+    } else {
+        return res.status(401).send({ status: 'error', message: 'Credenciales inválidas.' });
+    }
+});
+
+
+// ----------------------------------------------------
+// 11. MIDDLEWARE DE SEGURIDAD (Función de Protección)
+// ----------------------------------------------------
+function protectRoute(req, res, next) {
+    const token = req.headers['x-auth-token']; // Espera el token en el header
+
+    if (token && token.length > 10) { 
+        next(); 
+    } else {
+        res.status(403).send({ status: 'error', message: 'Acceso denegado. Token requerido o inválido.' });
+    }
+}
+
+// ----------------------------------------------------
+// 12. ENDPOINT REST para la app móvil (Control Protegido)
+// ----------------------------------------------------
+app.post('/api/control/valvula', protectRoute, async (req, res) => {
     const action = req.body.action;
-    const durationMinutes = parseInt(req.body.durationMinutes) || 0; // Lee la duración (0 si es manual CERRAR)
+    const durationMinutes = parseInt(req.body.durationMinutes) || 0; 
 
     if (action === 'open' || action === 'close') {
         const isOpen = action === 'open';
@@ -263,11 +289,9 @@ app.post('/api/control/valvula', async (req, res) => {
         const result = await controlValvula(isOpen, accessToken);
 
         if (result.success) {
-            // SI ES ABRIR y tiene duración, programar el CIERRE
             if (isOpen && durationMinutes > 0) {
                 scheduleAutoClose(durationMinutes); 
             }
-            // SI ES CERRAR, CANCELAR CUALQUIER TEMPORIZADOR PENDIENTE
             if (!isOpen && autoCloseTimer) {
                 clearTimeout(autoCloseTimer);
                 autoCloseTimer = null;
@@ -285,16 +309,15 @@ app.post('/api/control/valvula', async (req, res) => {
 
 
 // ----------------------------------------------------
-// 11. ENDPOINT: Servir la Interfaz Web (Frontend)
+// 13. ENDPOINT: Servir la Interfaz Web (Frontend de prueba)
 // ----------------------------------------------------
 app.get('/', (req, res) => {
-    // Sirve el archivo control.html
     res.sendFile(path.join(__dirname, 'control.html')); 
 });
 
 
 // ----------------------------------------------------
-// 12. PRUEBA DE CONEXIÓN AL INICIAR EL SERVIDOR
+// 14. PRUEBA DE CONEXIÓN AL INICIAR EL SERVIDOR
 // ----------------------------------------------------
 async function testConnection() {
     console.log("-----------------------------------------");
@@ -326,15 +349,15 @@ async function testConnection() {
         }
         console.log("-----------------------------------------");
     } catch (e) {
-        // El error de red ya se maneja en getAccessToken, pero lo capturamos aquí por si acaso.
         console.log("-----------------------------------------");
     }
 }
 
 // ----------------------------------------------------
-// 13. INICIAR EL SERVIDOR
+// 15. INICIAR EL SERVIDOR
 // ----------------------------------------------------
-app.listen(PORT, async () => {
-    console.log(`Servidor de Backend TECNOSIS corriendo en http://localhost:${PORT}`);
+// 🚨 CORRECCIÓN FINAL: Usar '0.0.0.0' para escuchar el tráfico externo de AWS
+app.listen(PORT, '0.0.0.0', async () => {
+    console.log(`Servidor de Backend TECNOSIS corriendo en http://0.0.0.0:${PORT}`);
     await testConnection(); 
 });
