@@ -357,7 +357,8 @@ async function testConnection() {
 // 15. INICIAR EL SERVIDOR
 // ----------------------------------------------------
 // 🚨 CORRECCIÓN FINAL: Usar '0.0.0.0' para escuchar el tráfico externo de AWS
-app.listen(PORT, '0.0.0.0', async () => {
+app.listen(PORT, '0.0.0.0', async () => { // <--- ESTA ES LA VERSIÓN FINAL CORRECTA
     console.log(`Servidor de Backend TECNOSIS corriendo en http://0.0.0.0:${PORT}`);
     await testConnection(); 
+});
 });
