@@ -33,6 +33,7 @@ const SESSION_TOKEN_SECRET = 'TU_SECRETO_SEGURO_AQUI_2025'; // Usado para firmar
 
 // ******* VERIFICACIÓN CRÍTICA *******
 if (!ACCESS_ID || !SECRET_KEY || !BASE_URL) {
+    // Si falta la clave, el servidor se cerrará inmediatamente para evitar fallos de Tuya.
     console.error("❌ ERROR CRÍTICO: Variables de entorno faltantes. Revisa el archivo .env.");
     return;
 }
@@ -101,7 +102,7 @@ function signRequest(method, path, query, body, accessToken, t) {
 }
 
 // ----------------------------------------------------
-// 5. FUNCIÓN PARA OBTENER EL ESTADO ACTUAL DE LA VÁLVULA
+// 5. FUNCIÓN PARA OBTENER EL ESTADO ACTUAL DE LA VÁLVULA (Necesario para automatización)
 // ----------------------------------------------------
 async function getValveStatus() {
     try {
@@ -164,7 +165,7 @@ async function controlValvula(isOpen, accessToken) {
 
 
 // ----------------------------------------------------
-// 7. FUNCIÓN PARA PROGRAMAR EL CIERRE AUTOMÁTICO
+// 7. FUNCIÓN PARA PROGRAMAR EL CIERRE AUTOMÁTICO (Programación por tiempo)
 // ----------------------------------------------------
 async function scheduleAutoClose(durationMinutes) {
     if (autoCloseTimer) {
@@ -247,10 +248,18 @@ app.post('/api/auth/login', (req, res) => {
     const { username, password } = req.body;
 
     if (username === STATIC_USERNAME && password === STATIC_PASSWORD) {
+<<<<<<< HEAD
         // Generar un token simple 
         const token = crypto.createHash('sha256').update(STATIC_USERNAME + SESSION_TOKEN_SECRET + Date.now()).digest('hex');
         
         console.log(`✅ USUARIO AUTENTICADO: ${username}. Token generado.`);
+=======
+        // Generar un token simple (simulando una firma segura)
+        const token = crypto.createHash('sha256').update(STATIC_USERNAME + SESSION_TOKEN_SECRET + Date.now()).digest('hex');
+        
+        console.log(`✅ USUARIO AUTENTICADO: ${username}. Token generado.`);
+        // Envía el token al frontend (APK)
+>>>>>>> f8454d7 (APLICAR CORRECCIÓN FINAL: Forzar escucha en 0.0.0.0 para AWS)
         return res.status(200).send({ status: 'success', message: 'Login exitoso.', token: token });
     } else {
         return res.status(401).send({ status: 'error', message: 'Credenciales inválidas.' });
@@ -259,6 +268,7 @@ app.post('/api/auth/login', (req, res) => {
 
 
 // ----------------------------------------------------
+<<<<<<< HEAD
 // 11. MIDDLEWARE DE SEGURIDAD (Función de Protección)
 // ----------------------------------------------------
 function protectRoute(req, res, next) {
@@ -274,6 +284,11 @@ function protectRoute(req, res, next) {
 // ----------------------------------------------------
 // 12. ENDPOINT REST para la app móvil (Control Protegido)
 // ----------------------------------------------------
+=======
+// 11. ENDPOINT REST para la app móvil (Control Protegido)
+// ----------------------------------------------------
+// Protegido con el middleware 'protectRoute'
+>>>>>>> f8454d7 (APLICAR CORRECCIÓN FINAL: Forzar escucha en 0.0.0.0 para AWS)
 app.post('/api/control/valvula', protectRoute, async (req, res) => {
     const action = req.body.action;
     const durationMinutes = parseInt(req.body.durationMinutes) || 0; 
@@ -306,6 +321,19 @@ app.post('/api/control/valvula', protectRoute, async (req, res) => {
         return res.status(400).send({ status: "error", message: "Invalid action." });
     }
 });
+
+// ----------------------------------------------------
+// 12. MIDDLEWARE DE SEGURIDAD (Función de Protección)
+// ----------------------------------------------------
+function protectRoute(req, res, next) {
+    const token = req.headers['x-auth-token']; // Espera el token en el header
+
+    if (token && token.length > 10) { 
+        next(); 
+    } else {
+        res.status(403).send({ status: 'error', message: 'Acceso denegado. Token requerido o inválido.' });
+    }
+}
 
 
 // ----------------------------------------------------
@@ -356,8 +384,12 @@ async function testConnection() {
 // ----------------------------------------------------
 // 15. INICIAR EL SERVIDOR
 // ----------------------------------------------------
+<<<<<<< HEAD
 // 🚨 CORRECCIÓN FINAL: Usar '0.0.0.0' para escuchar el tráfico externo de AWS
 app.listen(PORT, '0.0.0.0', async () => { // <--- ESTA ES LA VERSIÓN FINAL CORRECTA
+=======
+app.listen(PORT, async () => {
+>>>>>>> f8454d7 (APLICAR CORRECCIÓN FINAL: Forzar escucha en 0.0.0.0 para AWS)
     console.log(`Servidor de Backend TECNOSIS corriendo en http://0.0.0.0:${PORT}`);
     await testConnection(); 
 });

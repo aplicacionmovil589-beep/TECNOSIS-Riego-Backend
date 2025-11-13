@@ -4,7 +4,7 @@ import 'dart:convert';
 
 // 🚨 1. AJUSTAR ESTE HOST: IP y PUERTO de tu servidor Node.js
 // Utiliza la IP que obtuviste: 192.168.1.45
-const String API_BASE_URL_HOST = '192.168.1.45:3000'; 
+const String API_BASE_URL_HOST = '13.220.6.167:3000'; 
 const String CONTROL_ENDPOINT_PATH = '/api/control/valvula';
 
 void main() {
